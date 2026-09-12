@@ -144,6 +144,6 @@ contributions are welcome. open issues, throw PRs, suggest stuff — free for al
 
 ## Credits
 
-**deviato** reverse-engineered the original Spotifuck. **lyssadev** ported the core logic from smali to Kotlin and maintains this project.
+**ThinuxBOOM**
 
-all rights reserved — lyssadev & deviato.
+all rights reserved — ThinuxBOOM
