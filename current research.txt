@@ -1,0 +1,285 @@
+# Final report: mobile Spotify adblocking logic
+
+
+---
+
+## 1. Verdict
+
+**adblockify’s file cannot run on Android.** It is a JS extension injected into desktop Spotify’s CEF page. The Play Store app is Kotlin/ART plus a JNI core.
+
+**The decision layer is the same.** Both clients use product state, remote config, Esperanto named slots, an ad server, and a player-inserted break.
+
+**A mobile counterpart would not call `disable()`.** It would intercept **reads** of five questions inside `com.spotify.music`:
+
+1. Are we Premium?  
+2. Is this slot enabled?  
+3. Is there a creative?  
+4. Are we in an ad break?  
+5. Should we show this Activity / section?
+
+Public Android mods already attack (1) and parts of (5).
+
+---
+
+## 2. Desktop reference: what “the logic” is
+
+adblockify is third-party Spicetify, not Spicetify core. It is not a URL filter. It hijacks Spotify’s own ads SDK.
+
+### Boot
+
+Wait for `platformLoaded` + `webpackLoaded`. Retry 100ms until `AdManagers.audio` and `CosmosAsync` exist. Steal `__webpack_require__` via a dummy `chunkQueue.push`. Find Esperanto constructors by `SERVICE_ID`:
+
+```text
+spotify.ads.esperanto.settings.proto.Settings
+spotify.ads.esperanto.slots.proto.Slots
+spotify.ads.esperanto.testing.proto.Testing
+```
+
+Instantiate with `productState.transport`. From then on it is a peer of the ads SDK, not a DOM scraper.
+
+Product state lives under three historical names: `UserAPI._product_state`, `UserAPI._product_state_service`, `Platform.ProductStateAPI.productStateApi`.
+
+### Five layers
+
+| Layer | Mechanism | Job |
+|---|---|---|
+| **1 Product state** | `putOverridesValues({ ads:"0", catalogue/product/type:"premium" })` + `subValues` | Local Free→Premium lie; re-apply on server push |
+| **2 Managers** | `audio/billboard/leaderboard/sponsoredPlaylist/inStream/vto/embedded.disable()`, `isNewAdsNpvEnabled=false`, `addPlaytime(-1e11)` | Session kill-switch + underflow the “time for an ad?” clock |
+| **3 Slots** | subscribe, `clearSlot` + `clearAllAds`, `updateSlotEnabled(false)`, dead ad-server URL, interval `0`/`0n` | Inventory never commits; prefetch cleared at +50ms; settings rewritten again at +5s |
+| **4 CSS** | `<style class="adblockify">` on HPTO / leaderboard / Upgrade / `data-testid` | Hide leftover chrome; does **not** stop audio |
+| **5 Remote config** | `enableEsperantoMigration=true`, `enableInAppMessaging=false`, `hideUpgradeCTA=true` | Stay on Esperanto (so 2–3 hit); kill promo modals |
+
+Steady state: no `Player.next()` on ads. Three events keep the lie: product-state change → re-disable; slot fill → clear/poison; 5s timer → rewrite settings (Spotify overwrites them after init).
+
+`1.2.82+` interval type is `bigint`; older builds want `"0"`. Wrong type → silent fail → slot stays live.
+
+**Ceiling:** `putOverridesValues` is in-memory. The API still authenticates Free.
+
+This five-layer model is what “mobile implementation” has to reproduce, with different primitives.
+
+---
+
+## 3. Desktop vs mobile: same brain, different faces
+
+### Shared
+
+ProductState, remote config/eligibility, Esperanto slots (`Prepare` → `Trigger` → `Clear`), ad server (≤30s audio, VAST video, display), player insert.
+
+### Different catalog and renderer
+
+| Placement | Desktop | Mobile |
+|---|---|---|
+| Audio mid-roll | Yes | Yes |
+| Video (in-focus only) | 16:9 pane + companion | 9:16 fullscreen; lock → lock-screen companion |
+| HPTO | Giant home hero | `home-above-the-fold` |
+| Leaderboard | Wide Browse banner | Narrow NPV/search; often omitted |
+| Overlay | Tab-back banner, ~30s | **Fullscreen on app open** until tap |
+| Marquee | Rare | First-class |
+| Canvas-on-ads | Square if out of focus | Full-bleed 9:16 in focus |
+| Rewarded video → 30 min ad-free | Rare | Common |
+| Lyrics overlay / screensaver / watch-now | Mostly unused | Native slots |
+
+**In-focus rule (Spotify spec):** video only when the client reports in-focus. Phone screen-off ≈ audio-only ads. Phone app-open ≈ interstitial wall. That mix is why “PC has more ads” and “phone has more ads” are both reported.
+
+Free-tier **session** rules also differ: mobile more often shuffle-locks (`on-demand=false`) and caps skips (`active-play-limit`).
+
+Connect/Cast: ads play on the **playing** device’s product state, not the controller.
+
+---
+
+## 4. Android process model
+
+Not five Linux PIDs. Typical dump:
+
+```text
+com.spotify.music    UI + ads Java SDK + MediaSession + Esperanto + JNI core
+```
+
+`SpotifyService`, `MarqueeService`, `FeatureService` usually run **in that PID**. Ads are first-party packages (`com.spotify.ads`, `adsdisplay`, `adsinternal`, `adshome`, `ad.detection`), not a YouTube-style `:ad` process.
+
+Beside ART: **native client core** (JNI `.so`, historically orbit / libspotify-style) with its own threads. Same process, different language. Java-only map hooks can leave audio ads alive if the core inserts `spotify:ad:` itself. Old XDA mods patched `liborbit-jni` for that.
+
+External PIDs (Auto, Wear, Assistant, Bluetooth, mute-apps) **do not ask** product state. They **observe** MediaSession / `com.spotify.music.metadatachanged` (`METADATA_KEY_ADVERTISEMENT`, URI `spotify:ad:…`, title `"Advertisement"`).
+
+---
+
+## 5. Who asks the five questions
+
+All inside `com.spotify.music` unless noted.
+
+### (1) Are we Premium?
+
+Readers of `ProductStateProto` / `SessionState.getProductType()` / the attribute map.
+
+| Caller | If Free |
+|---|---|
+| Playback policy | Shuffle lock, skip cap, no on-demand |
+| Ads eligibility | Start Esperanto + managers |
+| Home / browse / NPV | Upsell + ad sections |
+| Connect UI on this device | Still Free on the speaker |
+| Feature / remote-config | App-open ads, NPV ads mode |
+| **JNI core** | May ignore the Java map |
+
+Most widely read value. Hooking only a Compose Premium badge leaves core + ads SDK on Free.
+
+Public Android override keys (research, from public patch docs):
+
+| Key | Forced | Effect |
+|---|---|---|
+| `ads` | `false` | Scheduler thinks ads off |
+| `player-license`, `player-license-v2` | `"premium"` | Playback policy |
+| `on-demand` | `true` | Pick any song |
+| `shuffle` | `false` | Don’t force shuffle |
+| `streaming` | `true` | Remote kill-switch |
+| `pick-and-shuffle` | `false` | Queue |
+
+Desktop adblockify only wrote `ads/catalogue/product/type`. Android Free is gated harder; `on-demand` / `player-license` are the extra keys that match mobile shuffle-lock.
+
+### (2) Is this slot enabled?
+
+Esperanto Settings + registry. A slot can stay enabled without re-reading product state once the session is “ads.”
+
+Android registry (public APK notes):
+
+```text
+stream, preroll, podcast-midroll-1,
+watchnow, midroll-watchnow,
+marquee, mobile-screensaver, lyrics-overlay,
+sponsored-playlist, now-playing-bar,
+embedded-npv, embedded-playlist, home-above-the-fold,
+active-play-limit, repeat-play
+```
+
+| Caller | Slots |
+|---|---|
+| In-stream / player | `stream`, `podcast-midroll-1`, `preroll` |
+| App-open eligibility | overlay / `marquee` |
+| `adshome` | `home-above-the-fold` |
+| NPV | `now-playing-bar`, `embedded-npv`, `lyrics-overlay` |
+| Sponsored playlist | `sponsored-playlist` |
+| Screensaver | `mobile-screensaver` |
+| Skip/repeat gates | `active-play-limit`, `repeat-play` |
+
+RPCs: `SubSlot`, `CreateSlot`, `PrepareSlot`, `PrepareNextTrackSlot`, `PrepareNextContextSlot`, `FetchSlot`, `TriggerSlot`, `ClearSlot`, `ClearAllAds`, `ClearAvailableAds`. Plus `InStream.SubInStream`.
+
+**Mobile-only vs adblockify’s manager list:** app-open, Marquee, screensaver, lock-screen companion, rewarded video, `podcast-midroll-1`. A 1:1 port misses them.
+
+### (3) Is there a creative?
+
+`FetchSlot` / `TriggerSlot` / `SubInStream` + HTTP/gRPC.
+
+- Slot client stores VAST/audio URL  
+- In-stream pushes into the **timeline**  
+- `adsdisplay` parcels an `ad` extra for an Activity  
+- Native core may fetch audio on the **music CDN** (cannot 404 those URLs without killing tracks)  
+
+This is the layer that stops **audio**. UI-only hiding leaves a 30s hole.
+
+### (4) Are we in an ad break?
+
+`PlayerState.adBreakContext(...)`, `Break/SubBreakState`, `totalAdsInBreakEstimate()`, item URI `spotify:ad:…`.
+
+| If yes | Effect |
+|---|---|
+| Player | 15–30s item, skip/seek blocked |
+| `AdsModeModel` | NPV swaps to ads chrome |
+| MediaSession | `"Advertisement"`, `METADATA_KEY_ADVERTISEMENT=1` |
+| Broadcasts | Auto / Wear / Hushify see an ad |
+
+Mute-apps **listen here**. They drop `STREAM_MUSIC` and leave the break in the timeline. That is not this logic.
+
+### (5) Should we show this Activity / section?
+
+Foreground only.
+
+| Surface | Role |
+|---|---|
+| `DisplayAdActivity` | Fullscreen video / takeover |
+| In-app browser / CMP | Clickthrough / consent |
+| `MarqueeService` | Full-screen promo |
+| Home section list | Ad/upsell rows, `home-above-the-fold` |
+| NPV ads-mode renderer | Now-playing takeover |
+| `isPremiumUpsell` | Upgrade row |
+
+**Stops asking when the screen is off.** (1)–(4) keep asking. Swallowing only `DisplayAdActivity` looks fine in-app and still plays audio ads in the background.
+
+---
+
+## 6. How the five layers map to mobile (primitive, not a recipe)
+
+Desktop **writes** (`putOverridesValues`, `.disable()`, `updateSlotEnabled`). Mobile would have to **intercept reads** because Spotify rebuilds objects from the network. Permanent after-hooks are stronger than adblockify’s write + 5s retry.
+
+| Desktop | Mobile analogue | Primitive |
+|---|---|---|
+| `putOverridesValues` + `subValues` | After-hook map getter; copy map; patch keys; also `getProductType()` | Replace return |
+| `AdManagers.*.disable()` | Eligibility getters false (`AdOnAppOpenEligibilityService`, NPV ads mode, remote-config booleans) | Replace return |
+| `addPlaytime(-1e11)` | Playtime getter + huge negative, or “should fire?” → false | Replace return |
+| `Fetch/Trigger` + `clearSlot` | Empty fetch response; skip trigger; drop `SubInStream`; optional original `ClearAllAds` | Skip commit / empty return |
+| Settings writes + 5s retry | “Enabled?” → false; endpoint dummy; interval 0 — **on the getter** | Replace return |
+| CSS | Don’t start `DisplayAdActivity`; return new home list without ad sections; ads-mode / upsell false | Skip startActivity; replace list |
+| `enableEsperantoMigration=true` | Keep Esperanto path **on** so slot hooks are the live path; app-open / messaging off | Replace config reads |
+
+**Attach race (same as desktop 2s flash):** product-state getter and fetch-skip must be live before first `TriggerSlot` and first home inflate. If ProductState hydrates after first fetch, one cold-start ad remains.
+
+**Do not mutate live collections.** Copy the product-state map; allocate a new home section list. Public patches crashed on `List.remove` of immutable structures.
+
+**Do not 404 the music CDN.** OkHttp “drop ad hosts” (LSpot-style) is a different, dumber layer. Shared CDN → dead tracks. Empty Esperanto responses are the surgical version.
+
+---
+
+## 7. What “working” vs “failed” looks like
+
+```text
+ProductState.getAttributes()     → patched map
+Settings.isEnabled(slot)         → false
+Slots.fetch / trigger / inStream → empty / skipped
+PlayerState.adBreakContext()     → none
+startActivity(DisplayAdActivity) → cancelled
+Home.getSections()               → ads stripped
+```
+
+Success: no `spotify:ad:` in the timeline, NPV never in ads mode, no home ad section, no app-open fullscreen, MediaSession never titled Advertisement.
+
+| Symptom | Missing layer |
+|---|---|
+| Shuffle unlocked, audio ads play | 1 only |
+| No overlay, 30s silence/audio in background | 5 without 3 |
+| No audio, NPV still ads chrome / Auto sees Advertisement | 3 without 4 |
+| One ad at cold start | Fetch skip installed after first Trigger |
+| Ads after Play update | Obfuscated names moved; residue (proto strings, attribute keys) still how one would re-find methods |
+| Overlay on resume despite `ads=false` | App-open eligibility is a **separate gate** |
+| Audio ads with Java hooks “working” | JNI core path |
+
+---
+
+## 8. Hard limits (desktop and mobile)
+
+| Out of reach | Why |
+|---|---|
+| Downloads, Very High, Jams, native lyrics | Server license |
+| Ads on Cast / Connect / car / other desktop | Other client’s product state |
+| Integrity / session kills | Play Integrity, signature, token binding; patched clients are a different binary (desktop Spicetify still runs the official binary) |
+| Stable hooks across Play updates | ProGuard; desktop `SERVICE_ID` strings are stabler than smali |
+| Independent streaming without official engine | Public Web API does not give track audio; App Remote still runs **their** ads SDK |
+
+---
+
+## 9. Related public work (context)
+
+| Work | Relation to this logic |
+|---|---|
+| ReVanced / ReVancedXposed Spotify | Map-getter override + home-section filter. |
+| LSpot | OkHttp empty-200 for ad URLs — **not** this logic; brittle on shared CDN |
+| Hushify / SpotMute / Mutify | Observe MediaSession, mute volume — leave the break |
+| Old XDA Dogfood | Native `liborbit-jni` patch — JNI layer this report flags |
+| Spotilol / WebView wraps | Different client (web player), not official Android ads SDK |
+
+---
+
+## 10. One-sentence findings
+
+- **Logic:** five cooperating lies (Premium map, managers/eligibility off, slots empty, break-state none, UI not shown), kept alive on every re-read because Spotify pushes truth back.  
+- **Desktop:** JS writes into leaked APIs after webpack theft.  
+- **Mobile:** same five questions, one process (`com.spotify.music` + JNI), no webpack/DOM; would have to intercept getters and skip slot commits, including mobile-only slots (app-open, Marquee, lock-screen, podcast mid-roll).  
+- **File port:** impossible. **Kind of attack:** already demonstrated in public Android patches; legally contested; does not unlock server Premium.  
+- **Mute apps and host blockers** are different programs and fail in different ways (timeline still has the break; or music 404s).
