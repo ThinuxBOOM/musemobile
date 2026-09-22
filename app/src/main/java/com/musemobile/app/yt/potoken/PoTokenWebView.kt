@@ -17,7 +17,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Headers.Companion.toHeaders
-import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import android.util.Log
 import java.time.Instant
@@ -328,8 +327,9 @@ class PoTokenWebView private constructor(
                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.3"
         private const val JS_INTERFACE = "PoTokenWebView"
 
-        private val httpClient = OkHttpClient.Builder()
-            .proxy(YouTube.proxy)
+        // Shared pool/dispatcher + fail-fast 15s timeouts (was: isolated
+        // client with no timeouts).
+        private val httpClient = com.musemobile.app.net.SharedOkHttp.builder(YouTube.proxy)
             .build()
 
         suspend fun getNewPoTokenGenerator(context: Context): PoTokenWebView {

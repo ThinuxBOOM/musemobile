@@ -42,13 +42,6 @@ private data class YtMeta(
     val shareLink: String?,
 )
 
-private data class DownloadedTrack(
-    val success: Boolean,
-    val title: String,
-    val artist: String,
-    val album: String,
-)
-
 private sealed class TrackResult {
     data class Saved(
         val title: String,
@@ -99,9 +92,6 @@ object DownloadManager {
     private val consumerLock = Any()
 
     @Volatile
-    var onProgress2: ((Int, String) -> Unit)? = null
-
-    @Volatile
     var lastPct: Int = 0
 
     @Volatile
@@ -115,7 +105,6 @@ object DownloadManager {
         lastPct = pct
         lastLabel = label
         onProgress?.invoke(pct, label)
-        onProgress2?.invoke(pct, label)
     }
 
     private enum class ControlSignal { SKIP, CANCEL }

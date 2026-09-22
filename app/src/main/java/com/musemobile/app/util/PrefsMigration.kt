@@ -9,11 +9,16 @@ import android.content.Context
 object PrefsMigration {
     private const val NEW_PREFS = "musemobile_prefs"
     private const val OLD_PREFS = "spotilol_prefs"
+    private const val KEY_MIGRATED_V1 = "PrefsMigratedV1"
 
     fun migrate(context: Context) {
+        // Steady-state fast path: one cached boolean, zero file opens.
+        val done = context.getSharedPreferences(NEW_PREFS, Context.MODE_PRIVATE)
+        if (done.getBoolean(KEY_MIGRATED_V1, false)) return
         runCatching { migratePlainPrefs(context) }
         runCatching { migrateSecurePassword(context) }
         runCatching { migrateProfiles(context) }
+        runCatching { done.edit().putBoolean(KEY_MIGRATED_V1, true).apply() }
     }
 
     private fun migratePlainPrefs(context: Context) {

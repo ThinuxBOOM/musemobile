@@ -24,7 +24,6 @@ import java.io.IOException
 import kotlinx.coroutines.delay
 import java.util.*
 import kotlin.io.encoding.Base64
-import timber.log.Timber
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
@@ -76,37 +75,32 @@ class InnerTube {
             deflate(0.8F)
         }
 
-        // Enhanced network configuration for better performance
+        // Lean network configuration: small shared-style pool, fail-fast timeouts.
+        // NOTE: no OkHttp disk cache here on purpose — InnerTube calls are all
+        // authenticated POSTs (never cacheable), and java.io.tmpdir is not a valid
+        // app-scoped cache dir on Android.
         engine {
             config {
                 // Connection pool settings for better connection reuse
                 connectionPool(
                     okhttp3.ConnectionPool(
-                        10, // maxIdleConnections
+                        5, // maxIdleConnections
                         5, // keepAliveDuration
                         java.util.concurrent.TimeUnit.MINUTES
                     )
                 )
-                
-                // Timeout configurations
-                connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
-                
+
+                // Timeout configurations (fail fast on mobile; withRetry covers blips)
+                connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+
                 // Enable HTTP/2 for better performance
                 protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1))
-                
+
                 // Retry on connection failure
                 retryOnConnectionFailure(true)
-                
-                // Cache configuration for better performance
-                cache(
-                    okhttp3.Cache(
-                        directory = java.io.File(System.getProperty("java.io.tmpdir"), "http_cache"),
-                        maxSize = 50L * 1024L * 1024L // 50 MB
-                    )
-                )
-                
+
                 // Apply proxy configuration
                 this@InnerTube.proxy?.let { proxyConfig ->
                     proxy(proxyConfig)
@@ -125,9 +119,9 @@ class InnerTube {
 
         // Request timeout configuration
         install(HttpTimeout) {
-            requestTimeoutMillis = 60000
-            connectTimeoutMillis = 30000
-            socketTimeoutMillis = 60000
+            requestTimeoutMillis = 30000
+            connectTimeoutMillis = 15000
+            socketTimeoutMillis = 30000
         }
 
         defaultRequest {
@@ -250,13 +244,4 @@ class InnerTube {
     }
 
     suspend fun getSwJsData() = withRetry { httpClient.get("https://music.youtube.com/sw.js_data") }
-
-    
-    private suspend fun returnYouTubeDislike(videoId: String) = withRetry {
-        httpClient.get("https://returnyoutubedislikeapi.com/Votes?videoId=$videoId") {
-            contentType(ContentType.Application.Json)
-        }
-    }
-
-
 }

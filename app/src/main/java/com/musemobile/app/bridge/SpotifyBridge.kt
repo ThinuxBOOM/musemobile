@@ -240,6 +240,7 @@ class SpotifyBridge(activityRef: WeakReference<Activity>) {
                 requestMethod = method
                 connectTimeout = 10000
                 readTimeout = 10000
+                instanceFollowRedirects = true
                 val keys = headersJson.keys()
                 while (keys.hasNext()) {
                     val key = keys.next()
@@ -265,15 +266,32 @@ class SpotifyBridge(activityRef: WeakReference<Activity>) {
 
             val code = conn.responseCode
             val headerFields = conn.headerFields
+            var sawSetCookie = false
             headerFields.forEach { (key, values) ->
                 if (key != null && key.equals("Set-Cookie", ignoreCase = true)) {
+                    sawSetCookie = true
                     values.forEach { CookieManager.getInstance().setCookie(url, it) }
                 }
             }
-            CookieManager.getInstance().flush()
+            // flush() is an IPC to the WebView process — only pay for it when a
+            // cookie actually changed.
+            if (sawSetCookie) CookieManager.getInstance().flush()
 
             val stream = if (code >= 400) conn.errorStream else conn.inputStream
-            val responseBody = stream?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+            // Cap bodies at 2 MiB: nFetch serves small Spotify JSON; an uncapped
+            // readBytes() lets one huge response OOM the JavaBridge thread.
+            val responseBody = stream?.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buf = ByteArray(8192)
+                var remaining = 2 * 1024 * 1024
+                while (remaining > 0) {
+                    val n = input.read(buf, 0, minOf(buf.size, remaining))
+                    if (n <= 0) break
+                    out.write(buf, 0, n)
+                    remaining -= n
+                }
+                out.toString(Charsets.UTF_8.name())
+            } ?: ""
 
             val responseHeaders = JSONObject()
             headerFields.forEach { (key, values) ->

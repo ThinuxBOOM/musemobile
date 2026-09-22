@@ -105,7 +105,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.webkit.WebViewCompat
@@ -1596,40 +1595,6 @@ fun ConfirmationDialog(
             }
         }
     )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun SettingsContentPreview() {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("preview_prefs", Context.MODE_PRIVATE) }
-    SpotifyTheme {
-        SettingsContent(
-            modifier = Modifier.fillMaxSize(),
-            prefs = prefs,
-            materialYou = false,
-            onMaterialYouChange = {},
-            amoledThemeState = false,
-            onAmoledThemeChange = {},
-            hideTopBar = false,
-            onHideTopBarChange = {},
-            landscapeMode = false,
-            onLandscapeModeChange = {},
-            keepScreenOn = false,
-            onKeepScreenOnChange = {},
-            paletteSeed = null,
-            onPaletteSeedChange = {},
-            onConnectionModeChange = {},
-            onOfflineModeChange = {},
-            onSaveProfile = { _, _ -> },
-            onLoadProfile = {},
-            onDeleteProfile = {},
-            onClearCache = {},
-            onClearData = {},
-            blockServiceWorker = true,
-            onBlockServiceWorkerChange = {}
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

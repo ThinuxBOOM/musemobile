@@ -75,6 +75,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -107,7 +108,6 @@ import androidx.webkit.ProxyController
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.webkit.WebSettingsCompat
-import com.google.firebase.analytics.FirebaseAnalytics
 import com.musemobile.app.R
 import com.musemobile.app.bridge.SpotifyBridge
 import com.musemobile.app.offline.DownloadManager
@@ -183,18 +183,14 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var prefs: SharedPreferences
 
-    private val analytics: FirebaseAnalytics by lazy { FirebaseAnalytics.getInstance(this) }
-
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // Track screen view
-        analytics.logEvent(FirebaseAnalytics.Event.SCREEN_VIEW, Bundle().apply {
-            putString(FirebaseAnalytics.Param.SCREEN_NAME, "MainActivity")
-            putString(FirebaseAnalytics.Param.SCREEN_CLASS, "MainActivity")
-        })
+        // NOTE: no analytics here (collection is disabled in the manifest);
+        // logging SCREEN_VIEW would only burn CPU/IPC for dropped events on
+        // the cold-start path.
 
         prefs = getSharedPreferences("musemobile_prefs", MODE_PRIVATE)
         val useProxy = prefs.getString("ConnectionMode", "normal") == "proxy"
@@ -244,7 +240,6 @@ class MainActivity : ComponentActivity() {
             val paletteSeed = paletteSeedState.value
             val showDialog = showSleepTimerDialog.value
             val timerActive = sleepTimerActive.value
-            val loadProgress = loadingProgress.intValue
             val blockServiceWorker = blockServiceWorkerState.value
 
             var settingsDrawerOpen by remember { mutableStateOf(false) }
@@ -349,9 +344,6 @@ class MainActivity : ComponentActivity() {
                                 },
                                 navigationIcon = {
                                     IconButton(onClick = {
-                                        analytics.logEvent("open_settings", Bundle().apply {
-                                            putString(FirebaseAnalytics.Param.SCREEN_NAME, "SettingsDrawer")
-                                        })
                                         settingsDrawerOpen = true
                                     }) {
                                         Icon(
@@ -527,23 +519,9 @@ class MainActivity : ComponentActivity() {
                                 webView?.let { startMediaService() }
                             }
 
-                            val progressAlpha by animateFloatAsState(
-                                targetValue = if (loadProgress < 100) 1f else 0f,
-                                animationSpec = tween(durationMillis = 600, delayMillis = 200),
-                                label = "progressAlpha"
-                            )
-                            if (progressAlpha > 0.001f) {
-                                LinearProgressIndicator(
-                                    progress = { loadProgress / 100f },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(2.dp)
-                                        .align(Alignment.TopCenter)
-                                        .alpha(progressAlpha),
-                                    color = accentColor,   // was Color(0xFF22DD66)
-                                    trackColor = Color.Transparent,
-                                )
-                            }
+                            // Scoped: progress ticks 0..100 recompose only the
+                            // thin bar below, not the whole screen content.
+                            LoadingProgressBar(loadingProgress, accentColor)
 
                             webViewError.value?.let { (code, desc) ->
                                 com.musemobile.app.ui.components.ErrorScreen(
@@ -560,7 +538,9 @@ class MainActivity : ComponentActivity() {
                             if (showDialog) {
                                 SleepTimerDialog(
                                     timerActive = timerActive,
-                                    timerRemainingMs = sleepTimerRemainingMs.longValue,
+                                    // Pass the State itself: per-second ticks then
+                                    // recompose only the dialog, not the screen.
+                                    timerRemainingMs = sleepTimerRemainingMs,
                                     inputText = sleepTimerInputText.value,
                                     onInputChange = { sleepTimerInputText.value = it },
                                     onSetTimer = { minutes ->
@@ -619,16 +599,9 @@ class MainActivity : ComponentActivity() {
         serviceEnabledState.value = newValue
         prefs.edit().putBoolean("ServiceOn", newValue).apply()
         if (!newValue) {
-            analytics.logEvent("service_toggle", Bundle().apply {
-                putString("enabled", "off")
-            })
             stopService(Intent(this, MediaNotificationService::class.java))
             serviceStarted = false
             destroyWebView()
-        } else {
-            analytics.logEvent("service_toggle", Bundle().apply {
-                putString("enabled", "on")
-            })
         }
     }
 
@@ -709,10 +682,6 @@ class MainActivity : ComponentActivity() {
         sleepTimerActive.value = true
         sleepTimerRemainingMs.longValue = totalMs
 
-        analytics.logEvent("sleep_timer_start", Bundle().apply {
-            putString("minutes", minutes.toString())
-        })
-
         webView?.evaluateJavascript("""
             if(window.timerBtn) timerBtn.style.color='var(--spl-accent,#2d6)';
             var t=document.getElementById('spl-timer');
@@ -750,9 +719,36 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun LoadingProgressBar(
+        progressState: State<Int>,
+        accentColor: Color,
+    ) {
+        val loadProgress by progressState
+        val progressAlpha by animateFloatAsState(
+            targetValue = if (loadProgress < 100) 1f else 0f,
+            animationSpec = tween(durationMillis = 600, delayMillis = 200),
+            label = "progressAlpha"
+        )
+        if (progressAlpha > 0.001f) {
+            // BoxScope.align needs the caller Box scope; keep alignment via
+            // fillMaxWidth + height only — the bar sits at content top because
+            // it is the first child drawn after the WebView surface.
+            LinearProgressIndicator(
+                progress = { loadProgress / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .alpha(progressAlpha),
+                color = accentColor,
+                trackColor = Color.Transparent,
+            )
+        }
+    }
+
+    @Composable
     private fun SleepTimerDialog(
         timerActive: Boolean,
-        timerRemainingMs: Long,
+        timerRemainingMs: State<Long>,
         inputText: String,
         onInputChange: (String) -> Unit,
         onSetTimer: (Int) -> Unit,
@@ -761,7 +757,7 @@ class MainActivity : ComponentActivity() {
     ) {
         val minutes = inputText.toIntOrNull() ?: 0
         if (timerActive) {
-            val remainingSecs = timerRemainingMs / 1000
+            val remainingSecs = timerRemainingMs.value / 1000
             val mins = remainingSecs / 60
             val secs = remainingSecs % 60
             val timeStr = String.format("%d:%02d min remaining", mins, secs)
@@ -1189,10 +1185,37 @@ class MainActivity : ComponentActivity() {
                 conn = URL(url).openConnection() as HttpURLConnection
                 conn.connectTimeout = 5000
                 conn.readTimeout = 5000
+                conn.instanceFollowRedirects = true
                 conn.connect()
-                val raw = BitmapFactory.decodeStream(conn.inputStream)
+                // Read once (capped): lets us bounds-decode first so a 3000px
+                // cover isn't fully decoded just to be downscaled for PiP.
+                val bytes = conn.inputStream.use { input ->
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(8192)
+                    var remaining = 1 * 1024 * 1024
+                    while (remaining > 0) {
+                        val n = input.read(buf, 0, minOf(buf.size, remaining))
+                        if (n <= 0) break
+                        out.write(buf, 0, n)
+                        remaining -= n
+                    }
+                    out.toByteArray()
+                }
+                if (bytes.isEmpty()) return@Thread
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@Thread
+                // PiP artwork is tiny; 512px matches the notification path.
+                val target = 512
+                var sample = 1
+                while (bounds.outWidth / (sample * 2) >= target &&
+                    bounds.outHeight / (sample * 2) >= target
+                ) {
+                    sample *= 2
+                }
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                val raw = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
                 if (raw != null) {
-                    val target = 1024
                     val scale = min(target.toFloat() / raw.width, target.toFloat() / raw.height)
                     val w = (raw.width * scale).toInt().coerceAtLeast(1)
                     val h = (raw.height * scale).toInt().coerceAtLeast(1)
@@ -1331,11 +1354,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-
-        analytics.logEvent(FirebaseAnalytics.Event.SCREEN_VIEW, Bundle().apply {
-            putString(FirebaseAnalytics.Param.SCREEN_NAME, "MainActivity")
-            putString(FirebaseAnalytics.Param.SCREEN_CLASS, "MainActivity")
-        })
 
         prefs = getSharedPreferences("musemobile_prefs", MODE_PRIVATE)
         serviceEnabledState.value = prefs.getBoolean("ServiceOn", true)

@@ -29,8 +29,7 @@ import com.musemobile.app.yt.cipher.CipherDeobfuscator
 import com.musemobile.app.yt.potoken.PoTokenGenerator
 import com.musemobile.app.yt.potoken.PoTokenResult
 import com.musemobile.app.yt.sabr.EjsNTransformSolver
-import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
+
 
 object YTPlayerUtils {
     private const val logTag = "YTPlayerUtils"
@@ -40,12 +39,9 @@ object YTPlayerUtils {
     /** Max seconds to wait for PoToken generation before giving up. */
     private const val POT_FUTURE_TIMEOUT_SEC = 14L
 
-    private val httpClient = OkHttpClient.Builder()
-        .proxy(YouTube.proxy)
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
+    // Shares the process-wide pool/dispatcher (see SharedOkHttp) so stream
+    // validation reuses connections instead of warming its own pool.
+    private val httpClient = com.musemobile.app.net.SharedOkHttp.builder(YouTube.proxy)
         .build()
 
     private val poTokenGenerator = PoTokenGenerator()
@@ -155,11 +151,11 @@ object YTPlayerUtils {
 
         // Debug uploaded track response
         if (isUploadedTrack || playlistId?.contains("MLPT") == true) {
-            println("[PLAYBACK_DEBUG] Main player response status: ${mainPlayerResponse.playabilityStatus.status}")
-            println("[PLAYBACK_DEBUG] Playability reason: ${mainPlayerResponse.playabilityStatus.reason}")
-            println("[PLAYBACK_DEBUG] Video details: title=${mainPlayerResponse.videoDetails?.title}, videoId=${mainPlayerResponse.videoDetails?.videoId}")
-            println("[PLAYBACK_DEBUG] Streaming data null? ${mainPlayerResponse.streamingData == null}")
-            println("[PLAYBACK_DEBUG] Adaptive formats count: ${mainPlayerResponse.streamingData?.adaptiveFormats?.size ?: 0}")
+            Log.d(TAG, "Main player response status: ${mainPlayerResponse.playabilityStatus.status}")
+            Log.d(TAG, "Playability reason: ${mainPlayerResponse.playabilityStatus.reason}")
+            Log.d(TAG, "Video details: title=${mainPlayerResponse.videoDetails?.title}, videoId=${mainPlayerResponse.videoDetails?.videoId}")
+            Log.d(TAG, "Streaming data null? ${mainPlayerResponse.streamingData == null}")
+            Log.d(TAG, "Adaptive formats count: ${mainPlayerResponse.streamingData?.adaptiveFormats?.size ?: 0}")
         }
 
         var usedAgeRestrictedClient: YouTubeClient? = null
@@ -376,7 +372,6 @@ object YTPlayerUtils {
                     /** skip [validateStatus] for last client or private tracks */
                     if (isPrivatelyOwned) {
                         Log.d(TAG, "Skipping validation for privately owned track: ${currentClient.clientName}")
-                        println("[PLAYBACK_DEBUG] Using stream without validation for PRIVATELY_OWNED_TRACK")
                     } else {
                         Log.d(TAG, "Using last fallback client without validation: ${STREAM_FALLBACK_CLIENTS[clientIndex].clientName}")
                     }
@@ -400,18 +395,12 @@ object YTPlayerUtils {
 
         if (streamPlayerResponse == null) {
             Log.e(TAG, "Bad stream player response - all clients failed")
-            if (isUploadedTrack) {
-                println("[PLAYBACK_DEBUG] FAILURE: All clients failed for uploaded track videoId=$videoId")
-            }
             throw Exception("Bad stream player response")
         }
 
         if (streamPlayerResponse.playabilityStatus.status != "OK") {
             val errorReason = streamPlayerResponse.playabilityStatus.reason
             Log.e(TAG, "Playability status not OK: $errorReason")
-            if (isUploadedTrack) {
-                println("[PLAYBACK_DEBUG] FAILURE: Playability not OK for uploaded track - status=${streamPlayerResponse.playabilityStatus.status}, reason=$errorReason")
-            }
             throw Exception(errorReason)
         }
 
@@ -431,9 +420,6 @@ object YTPlayerUtils {
         }
 
         Log.d(TAG, "Successfully obtained playback data with format: ${format.mimeType}, bitrate: ${format.bitrate}")
-        if (isUploadedTrack) {
-            println("[PLAYBACK_DEBUG] SUCCESS: Got playback data for uploaded track - format=${format.mimeType}, streamUrl=${streamUrl.take(100)}...")
-        }
         PlaybackData(
             audioConfig,
             videoDetails,
@@ -443,8 +429,7 @@ object YTPlayerUtils {
             streamExpiresInSeconds,
         )
     }.onFailure { e ->
-        println("[PLAYBACK_DEBUG] EXCEPTION during playback for videoId=$videoId: ${e::class.simpleName}: ${e.message}")
-        e.printStackTrace()
+        reportException(e)
     }
     /**
      * Simple player response intended to use for metadata only.
@@ -508,10 +493,11 @@ object YTPlayerUtils {
                 requestBuilder.addHeader("Cookie", cookie)
             }
 
-            val response = httpClient.newCall(requestBuilder.build()).execute()
-            response.close()
-            val code = response.code
-            val accepted = response.isSuccessful || code == 405 || code == 403 || code == 410
+            // use{} guarantees the body is closed even if reading code throws.
+            val (code, successful) = httpClient.newCall(requestBuilder.build()).execute().use { response ->
+                response.code to response.isSuccessful
+            }
+            val accepted = successful || code == 405 || code == 403 || code == 410
             Log.d(TAG, "Stream URL validation: code=$code accepted=$accepted")
             return accepted
         } catch (e: java.io.IOException) {
@@ -617,9 +603,5 @@ object YTPlayerUtils {
 
         Log.e(TAG, "Failed to get stream URL")
         return null
-    }
-
-    fun forceRefreshForVideo(videoId: String) {
-        Log.d(TAG, "Force refreshing for videoId: $videoId")
     }
 }

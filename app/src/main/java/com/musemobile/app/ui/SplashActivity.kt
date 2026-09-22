@@ -37,7 +37,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,14 +46,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.firebase.analytics.FirebaseAnalytics
-import com.google.firebase.crashlytics.FirebaseCrashlytics
-import com.google.firebase.perf.FirebasePerformance
+import com.musemobile.app.BuildConfig
 import com.musemobile.app.proxy.LocalProxyManager
 import com.musemobile.app.ui.theme.SpotifyTheme
 import com.musemobile.app.util.PrefsMigration
@@ -68,10 +64,11 @@ private val MonochromeAccent = Color(0xFFE0E0E0)
 class SplashActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
 
         // One-time upgrade: copy legacy spotilol prefs/profiles into musemobile names.
+        // Steady-state cost is a single cached boolean (see PrefsMigration).
         PrefsMigration.migrate(this)
 
         requestedOrientation = if (
@@ -83,20 +80,14 @@ class SplashActivity : ComponentActivity() {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
 
-        val analytics = FirebaseAnalytics.getInstance(this)
-        FirebaseCrashlytics.getInstance()
-        FirebasePerformance.getInstance()
-        analytics.logEvent(FirebaseAnalytics.Event.APP_OPEN, Bundle().apply {
-            putString(FirebaseAnalytics.Param.SCREEN_NAME, "MuseMobile")
-            putString(FirebaseAnalytics.Param.SCREEN_CLASS, "SplashActivity")
-        })
+        // NOTE: Firebase collection stays disabled here (see manifest flags) and
+        // is enabled after MainActivity's first frame; APP_OPEN is logged there.
 
         setContent {
             var certInstalled by remember { mutableStateOf(false) }
             var checkDone by remember { mutableStateOf(false) }
             var checking by remember { mutableStateOf(true) }
             var exiting by remember { mutableStateOf(false) }
-            var contentAlpha by remember { mutableFloatStateOf(1f) }
             val scope = rememberCoroutineScope()
 
             LaunchedEffect(Unit) {
@@ -108,32 +99,27 @@ class SplashActivity : ComponentActivity() {
                     finish()
                     return@LaunchedEffect
                 }
-                withContext(Dispatchers.IO) {
+                // Compute off-main, assign on-main (snapshot state is main-confined).
+                val installed = withContext(Dispatchers.IO) {
                     val useProxy = getSharedPreferences("musemobile_prefs", MODE_PRIVATE)
                         .getString("ConnectionMode", "normal") == "proxy"
                     if (useProxy) {
                         LocalProxyManager.init(this@SplashActivity)
                         LocalProxyManager.start()
-                        delay(800)
-                        certInstalled = LocalProxyManager.isCAInstalled()
+                        LocalProxyManager.isCAInstalled()
                     } else {
                         LocalProxyManager.stop()
-                        delay(600)
-                        certInstalled = true
+                        true
                     }
-                    checkDone = true
-                    checking = false
                 }
+                certInstalled = installed
+                checkDone = true
+                checking = false
             }
 
             LaunchedEffect(certInstalled, checkDone) {
                 if (checkDone && certInstalled && !exiting) {
                     exiting = true
-                    animate(
-                        initialValue = 1f,
-                        targetValue = 0f,
-                        animationSpec = tween(500, easing = LinearEasing)
-                    ) { value, _ -> contentAlpha = value }
                     startActivity(Intent(this@SplashActivity, MainActivity::class.java))
                     overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
                     finish()
@@ -141,7 +127,7 @@ class SplashActivity : ComponentActivity() {
             }
 
             SpotifyTheme {
-                Box(modifier = Modifier.graphicsLayer { alpha = contentAlpha }) {
+                Box {
                     when {
                         checking -> LoadingScreen()
                         !certInstalled -> {
@@ -170,13 +156,14 @@ class SplashActivity : ComponentActivity() {
                                 onCheck = {
                                     checking = true
                                     scope.launch {
-                                        withContext(Dispatchers.IO) {
+                                        val installed = withContext(Dispatchers.IO) {
                                             if (!LocalProxyManager.isRunning) {
                                                 LocalProxyManager.start()
                                                 delay(500)
                                             }
-                                            certInstalled = LocalProxyManager.isCAInstalled()
+                                            LocalProxyManager.isCAInstalled()
                                         }
+                                        certInstalled = installed
                                         checking = false
                                     }
                                 },
@@ -226,10 +213,7 @@ private fun LoadingScreen() {
         label = "progress"
     )
 
-    val context = LocalContext.current
-    val versionName = remember {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName
-    }
+    val versionName = remember { BuildConfig.VERSION_NAME }
 
     Box(
         modifier = Modifier

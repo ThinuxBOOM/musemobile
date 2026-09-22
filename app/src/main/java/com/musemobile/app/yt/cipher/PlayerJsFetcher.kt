@@ -3,7 +3,6 @@ package com.musemobile.app.yt.cipher
 import com.musemobile.app.innertube.YouTube
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import android.util.Log
 import java.io.File
@@ -20,8 +19,9 @@ object PlayerJsFetcher {
     private const val PLAYER_JS_URL_TEMPLATE = "https://www.youtube.com/s/player/%s/player_ias.vflset/en_GB/base.js"
     private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
 
-    private val httpClient = OkHttpClient.Builder()
-        .proxy(YouTube.proxy)
+    // Shared pool/dispatcher + fail-fast 15s timeouts (was: isolated client,
+    // no timeouts — a stalled iframe_api fetch could hang playback startup).
+    private val httpClient = com.musemobile.app.net.SharedOkHttp.builder(YouTube.proxy)
         .build()
 
     // Regex to extract player hash from iframe_api response
@@ -194,15 +194,15 @@ object PlayerJsFetcher {
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .build()
 
-        val response = httpClient.newCall(request).execute()
-        Log.d(TAG, "iframe_api response: HTTP ${response.code}")
+        val body = httpClient.newCall(request).execute().use { response ->
+            Log.d(TAG, "iframe_api response: HTTP ${response.code}")
 
-        if (!response.isSuccessful) {
-            Log.e(TAG, "iframe_api HTTP ${response.code}")
-            return null
+            if (!response.isSuccessful) {
+                Log.e(TAG, "iframe_api HTTP ${response.code}")
+                return null
+            }
+            response.body.string()
         }
-
-        val body = response.body.string()
 
         Log.d(TAG, "iframe_api body length: ${body.length}")
         Log.v(TAG, "iframe_api body preview: ${body.take(200)}...")
@@ -228,15 +228,15 @@ object PlayerJsFetcher {
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             .build()
 
-        val response = httpClient.newCall(request).execute()
-        Log.d(TAG, "player.js response: HTTP ${response.code}")
+        val body = httpClient.newCall(request).execute().use { response ->
+            Log.d(TAG, "player.js response: HTTP ${response.code}")
 
-        if (!response.isSuccessful) {
-            Log.e(TAG, "player.js download HTTP ${response.code}")
-            return null
+            if (!response.isSuccessful) {
+                Log.e(TAG, "player.js download HTTP ${response.code}")
+                return null
+            }
+            response.body.string()
         }
-
-        val body = response.body.string()
 
         Log.d(TAG, "player.js downloaded: ${body.length} chars")
         return body

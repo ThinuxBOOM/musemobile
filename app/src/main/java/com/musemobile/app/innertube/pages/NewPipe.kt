@@ -4,7 +4,6 @@ import com.musemobile.app.innertube.models.YouTubeClient
 import com.musemobile.app.innertube.models.response.PlayerResponse
 import io.ktor.http.URLBuilder
 import io.ktor.http.parseQueryString
-import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -21,10 +20,11 @@ class NewPipeDownloaderImpl(
     proxy: Proxy?,
     proxyAuth: String? = null,
 ) : Downloader() {
+    // Shared pool/dispatcher so extractor traffic reuses connections held by
+    // the other YouTube clients; proxy auth behavior unchanged.
     private val client =
-        OkHttpClient
-            .Builder()
-            .proxy(proxy)
+        com.musemobile.app.net.SharedOkHttp
+            .builder(proxy)
             .proxyAuthenticator { _, response ->
                 proxyAuth?.let { auth ->
                     response.request.newBuilder()
@@ -59,16 +59,17 @@ class NewPipeDownloaderImpl(
             }
         }
 
-        val response = client.newCall(requestBuilder.build()).execute()
+        // use{} closes the response on every path (the old code leaked it on
+        // all non-429 paths and on exceptions thrown while reading the body).
+        client.newCall(requestBuilder.build()).execute().use { response ->
+            if (response.code == 429) {
+                throw ReCaptchaException("reCaptcha Challenge requested", url)
+            }
 
-        if (response.code == 429) {
-            response.close()
-            throw ReCaptchaException("reCaptcha Challenge requested", url)
+            val responseBodyToReturn = response.body.string()
+            val latestUrl = response.request.url.toString()
+            return Response(response.code, response.message, response.headers.toMultimap(), responseBodyToReturn, latestUrl)
         }
-
-        val responseBodyToReturn = response.body.string()
-        val latestUrl = response.request.url.toString()
-        return Response(response.code, response.message, response.headers.toMultimap(), responseBodyToReturn, latestUrl)
     }
 }
 

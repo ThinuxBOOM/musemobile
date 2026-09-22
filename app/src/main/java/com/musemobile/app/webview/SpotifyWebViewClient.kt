@@ -157,6 +157,13 @@ class SpotifyWebViewClient(
             .getString("ConnectionMode", "normal") == "proxy"
 
         if (!useProxy) {
+            // Fast path: this probe opens a real HttpURLConnection for EVERY
+            // resource (JS/CSS/img/audio) on the WebView thread. Its only
+            // observable effects are (a) Set-Cookie sync for Google auth hosts
+            // and (b) swapping ad audio for silent.mp3 — both of which only
+            // apply to narrow URL sets. Skip the connection for everything else.
+            val isGoogle = isGoogleAuthUrl(url)
+            if (!isGoogle && !isAdAudioUrl(url)) return null
             try {
                 val conn = URL(url).openConnection() as HttpURLConnection
                 try {
@@ -164,7 +171,6 @@ class SpotifyWebViewClient(
                     conn.instanceFollowRedirects = true
                     conn.connectTimeout = 5000
                     conn.readTimeout = 5000
-                    val isGoogle = isGoogleAuthUrl(url)
                     for ((k, v) in request.requestHeaders) {
                         val lk = k.lowercase(Locale.ROOT)
                         if (lk != "x-requested-with" && lk != "sec-gpc" && !lk.startsWith("sec-ch-ua") &&
@@ -184,12 +190,14 @@ class SpotifyWebViewClient(
                     conn.setRequestProperty("sec-ch-ua", "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Google Chrome\";v=\"150\"")
                     conn.connect()
                     if (isGoogle) {
+                        var sawSetCookie = false
                         conn.headerFields.forEach { (key, values) ->
                             if (key != null && key.equals("Set-Cookie", ignoreCase = true)) {
+                                sawSetCookie = true
                                 values.forEach { CookieManager.getInstance().setCookie(url, it) }
                             }
                         }
-                        CookieManager.getInstance().flush()
+                        if (sawSetCookie) CookieManager.getInstance().flush()
                     }
                     val contentType = conn.contentType
                     if (contentType == "audio/mpeg" &&

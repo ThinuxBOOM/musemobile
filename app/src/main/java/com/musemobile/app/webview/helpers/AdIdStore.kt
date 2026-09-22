@@ -78,18 +78,12 @@ object AdIdStore {
         return false
     }
 
-    /** Already an immutable copy; safe to hand out directly. */
-    @Suppress("unused")
-    fun snapshot(): List<String> = published
-
     fun clear() {
         synchronized(lock) {
             ids.clear()
             published = emptyList()
         }
     }
-
-    fun size(): Int = published.size
 
     /** Allocation-free equivalent of ^[a-zA-Z0-9_-]{8,128}$. */
     private fun isValidId(id: String): Boolean {

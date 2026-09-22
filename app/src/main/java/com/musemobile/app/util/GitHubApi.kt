@@ -29,17 +29,22 @@ object GitHubApi {
         onResult: (GitHubRelease?) -> Unit
     ) {
         executor.execute {
+            var conn: HttpURLConnection? = null
             try {
                 val url = URL("https://api.github.com/repos/$owner/$repo/releases/latest")
-                val conn = url.openConnection() as HttpURLConnection
+                conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
                 conn.setRequestProperty("Accept", "application/vnd.github+json")
                 conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                conn.instanceFollowRedirects = true
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
 
                 val release = if (conn.responseCode == 200) {
-                    val json = JSONObject(conn.inputStream.bufferedReader().readText())
+                    // use{} closes the stream on the error path too (old code
+                    // leaked the connection when readText() threw).
+                    val text = conn.inputStream.use { it.bufferedReader().readText() }
+                    val json = JSONObject(text)
                     GitHubRelease(
                         tagName = json.optString("tag_name", ""),
                         name = json.optString("name", ""),
@@ -50,11 +55,12 @@ object GitHubApi {
                 } else {
                     null
                 }
-                conn.disconnect()
 
                 Handler(Looper.getMainLooper()).post { onResult(release) }
             } catch (_: Exception) {
                 Handler(Looper.getMainLooper()).post { onResult(null) }
+            } finally {
+                try { conn?.disconnect() } catch (_: Exception) {}
             }
         }
     }

@@ -31,8 +31,5 @@ object DebugLogStore {
 
     fun snapshot(): List<String> = synchronized(lock) { ArrayList(buf) }
 
-    @Suppress("unused")
-    fun count(): Int = synchronized(lock) { buf.size }
-
     fun clear() = synchronized(lock) { buf.clear() }
 }

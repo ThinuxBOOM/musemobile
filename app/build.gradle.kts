@@ -26,6 +26,7 @@ android {
         targetSdk = 36
         versionCode = 13
         versionName = "1.1.3"
+        resourceConfigurations += "en"
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
@@ -83,15 +84,12 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics") {
         exclude(group = "com.google.firebase", module = "protolite-well-known-types")
     }
-    implementation("com.google.firebase:firebase-perf") {
-        exclude(group = "com.google.firebase", module = "protolite-well-known-types")
-    }
 
     // Jetpack Compose
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
+    debugImplementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.foundation)
@@ -109,9 +107,7 @@ dependencies {
 
     // NewPipe + YouTube streaming
     implementation(libs.newpipeextractor)
-    implementation(libs.brotli)
     implementation(libs.okhttp)
-    implementation(libs.timber)
 
     // Core library desugaring (required by NewPipeExtractor)
     coreLibraryDesugaring(libs.desugaring)

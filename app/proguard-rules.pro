@@ -1,4 +1,12 @@
+# --- JS bridge: WebView calls these by name via reflection ---
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 -keep class com.musemobile.app.bridge.SpotifyBridge { *; }
+-keepattributes JavascriptInterface,SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
+# --- App classes reached from the manifest / WebView (small, keep; cost is negligible) ---
 -keep class com.musemobile.app.webview.SpotifyWebViewClient { *; }
 -keep class com.musemobile.app.webview.SpotifyWebChromeClient { *; }
 -keep class com.musemobile.app.webview.injections.** { *; }
@@ -7,28 +15,29 @@
 -keep class com.musemobile.app.proxy.LocalProxyManager { *; }
 -keep class com.musemobile.app.ui.SplashActivity { *; }
 -keep class com.musemobile.app.ui.MainActivity { *; }
--keep class org.bouncycastle.** { *; }
+
+# --- BouncyCastle: only the cert-builder APIs LocalProxyManager actually uses ---
+-keep class org.bouncycastle.asn1.x500.** { *; }
+-keep class org.bouncycastle.asn1.x509.** { *; }
+-keep class org.bouncycastle.cert.jcajce.** { *; }
+-keep class org.bouncycastle.operator.jcajce.** { *; }
 -dontwarn org.bouncycastle.**
 -dontwarn javax.annotation.concurrent.GuardedBy
--keepclassmembers enum * { *; }
--keepclassmembers class * implements java.io.Serializable { *; }
--keepclassmembers class * implements android.os.Parcelable {
-    public static final android.os.Parcelable$Creator CREATOR;
-}
--keepattributes *Annotation*,JavascriptInterface,SourceFile,LineNumberTable
--renamesourcefileattribute SourceFile
 
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
--keep class com.google.protobuf.** { *; }
--keep class com.google.protos.** { *; }
--keep class ** extends com.google.protobuf.GeneratedMessageLite { *; }
--keep class ** extends com.google.protobuf.GeneratedMessage { *; }
--keepclassmembers class ** extends com.google.protobuf.GeneratedMessageLite {
-    <fields>;
+# --- kotlinx.serialization: keep generated serializers for InnerTube models ---
+-keepattributes RuntimeVisibleAnnotations,AnnotationDefault
+-keep class com.musemobile.app.innertube.models.** { *; }
+-keepclassmembers class ** {
+    @kotlinx.serialization.SerialName <fields>;
 }
--keepclassmembers class ** extends com.google.protobuf.GeneratedMessage {
-    <fields>;
+
+# --- Release: strip verbose/debug/info/warn logs (errors still go to Crashlytics) ---
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+    public static *** i(...);
+    public static *** w(...);
+    public static *** println(...);
 }
 
 # NewPipe / Rhino - java.beans.* not available on Android on device

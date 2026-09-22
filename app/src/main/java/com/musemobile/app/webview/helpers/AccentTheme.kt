@@ -77,10 +77,6 @@ object AccentTheme {
         return Accent.fromArgb(argb).also { cache = key to it }
     }
 
-    /** Drop the memoized accent (e.g. after a wallpaper swap on Material You). */
-    @Suppress("unused")
-    fun invalidate() { cache = null }
-
     fun resolveHex(context: Context): String = resolve(context).hex
 
     /** Compose-friendly variant for native chrome (loading bar, etc.). */

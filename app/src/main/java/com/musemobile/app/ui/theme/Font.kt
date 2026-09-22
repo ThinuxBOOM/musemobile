@@ -9,15 +9,10 @@ import androidx.compose.ui.unit.sp
 import com.musemobile.app.R
 
 val Saira = FontFamily(
-    Font(R.font.saira_thin, FontWeight.Thin),
-    Font(R.font.saira_extralight, FontWeight.ExtraLight),
-    Font(R.font.saira_light, FontWeight.Light),
     Font(R.font.saira_regular, FontWeight.Normal),
     Font(R.font.saira_medium, FontWeight.Medium),
     Font(R.font.saira_semibold, FontWeight.SemiBold),
     Font(R.font.saira_bold, FontWeight.Bold),
-    Font(R.font.saira_extrabold, FontWeight.ExtraBold),
-    Font(R.font.saira_black, FontWeight.Black),
 )
 
 val SairaTypography = Typography(
