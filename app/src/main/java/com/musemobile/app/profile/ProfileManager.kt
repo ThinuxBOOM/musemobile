@@ -17,7 +17,6 @@ object ProfileManager {
     )
 
     private const val PREFS = "musemobile_profiles"
-    private const val LEGACY_PREFS = "spotilol_profiles"
     private const val KEY_PROFILES = "profiles"
 
     private val COOKIE_DOMAINS = listOf(
@@ -61,34 +60,9 @@ object ProfileManager {
         }
     }
 
-    private fun readLegacyProfiles(context: Context): String? {
-        runCatching {
-            val masterKey = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-            val legacy = EncryptedSharedPreferences.create(
-                LEGACY_PREFS,
-                masterKey,
-                context,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            legacy.getString(KEY_PROFILES, null)?.takeIf { !it.isNullOrEmpty() }?.let { return it }
-        }
-        runCatching {
-            context.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_PROFILES, null)?.takeIf { !it.isNullOrEmpty() }?.let { return it }
-        }
-        return null
-    }
-
     fun getProfiles(context: Context): List<Profile> {
-        var raw = prefs(context).getString(KEY_PROFILES, null)
-        if (raw.isNullOrEmpty()) {
-            // Pre-rename installs stored profiles under the old file name; copy forward once.
-            raw = readLegacyProfiles(context)
-            if (!raw.isNullOrEmpty()) {
-                runCatching { prefs(context).edit().putString(KEY_PROFILES, raw).apply() }
-            } else return emptyList()
-        }
+        val raw = prefs(context).getString(KEY_PROFILES, null)
+        if (raw.isNullOrEmpty()) return emptyList()
         return try {
             val arr = JSONArray(raw)
             (0 until arr.length()).mapNotNull { i ->

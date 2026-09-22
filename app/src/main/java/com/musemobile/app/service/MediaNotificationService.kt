@@ -476,8 +476,6 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
-            // Remove the pre-rename channel so users don't end up with a stale duplicate.
-            runCatching { nm.deleteNotificationChannel("spotilol_media_playback") }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Media Playback",

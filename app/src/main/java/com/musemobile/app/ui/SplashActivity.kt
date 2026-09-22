@@ -53,7 +53,6 @@ import androidx.compose.ui.unit.sp
 import com.musemobile.app.BuildConfig
 import com.musemobile.app.proxy.LocalProxyManager
 import com.musemobile.app.ui.theme.SpotifyTheme
-import com.musemobile.app.util.PrefsMigration
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -66,10 +65,6 @@ class SplashActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        // One-time upgrade: copy legacy spotilol prefs/profiles into musemobile names.
-        // Steady-state cost is a single cached boolean (see PrefsMigration).
-        PrefsMigration.migrate(this)
 
         requestedOrientation = if (
             getSharedPreferences("musemobile_prefs", MODE_PRIVATE)

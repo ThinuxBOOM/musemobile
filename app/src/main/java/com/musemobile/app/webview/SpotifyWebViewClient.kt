@@ -244,9 +244,7 @@ class SpotifyWebViewClient(
         val closeNowPlay = prefs.getBoolean("CloseNowPlay", true)
         val amoledEnabled = prefs.getBoolean("AmoledTheme", false)
         val customCss = prefs.getString("CustomCss", "") ?: ""
-        // Legacy installs stored "spotilol" here; treat it as the renamed value.
-        val playerModeRaw = prefs.getString("PlayerMode", "musemobile") ?: "musemobile"
-        val playerMode = if (playerModeRaw == "spotilol") "musemobile" else playerModeRaw
+        val playerMode = prefs.getString("PlayerMode", "musemobile") ?: "musemobile"
         val useProxy = prefs.getString("ConnectionMode", "normal") == "proxy"
         val debugOverlay = prefs.getBoolean("DebugOverlay", false)
         val takeControl = prefs.getBoolean("TakeControl", true)
@@ -331,7 +329,7 @@ class SpotifyWebViewClient(
             when (key) {
                 "PlayerMode" -> {
                     val raw = prefs.getString("PlayerMode", "musemobile") ?: "musemobile"
-                    switchPlayerMode(wv, if (raw == "spotilol") "musemobile" else raw)
+                    switchPlayerMode(wv, raw)
                 }
                 "PowerSave" -> {
                     val on = prefs.getBoolean("PowerSave", false)
@@ -374,9 +372,7 @@ class SpotifyWebViewClient(
     }
 
     private fun switchPlayerMode(view: WebView, mode: String) {
-        // Legacy stored value from before the rename.
-        val normalized = if (mode == "spotilol") "musemobile" else mode
-        if (normalized == "original") {
+        if (mode == "original") {
             val js = """
                 (function(){
                     var pl=document.getElementById('musemobilePlayerControls');

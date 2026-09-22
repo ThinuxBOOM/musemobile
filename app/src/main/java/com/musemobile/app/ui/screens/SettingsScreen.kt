@@ -186,9 +186,7 @@ fun SettingsContent(
     var btAutoResume by remember { mutableStateOf(prefs.getBoolean("BtAutoResume", false)) }
     var hpAutoResume by remember { mutableStateOf(prefs.getBoolean("HpAutoResume", false)) }
     var playerMode by remember {
-        val raw = prefs.getString("PlayerMode", "musemobile") ?: "musemobile"
-        // Legacy installs stored "spotilol"; map it to the renamed value.
-        mutableStateOf(if (raw == "spotilol") "musemobile" else raw)
+        mutableStateOf(prefs.getString("PlayerMode", "musemobile") ?: "musemobile")
     }
     var connectionMode by remember { mutableStateOf(prefs.getString("ConnectionMode", "normal") ?: "normal") }
     var offlineMode by remember { mutableStateOf(prefs.getBoolean("OfflineMode", false)) }

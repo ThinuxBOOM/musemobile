@@ -177,7 +177,6 @@ class OfflineMediaService : Service() {
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
-            runCatching { nm.deleteNotificationChannel("spotilol_offline_playback") }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Offline Playback",

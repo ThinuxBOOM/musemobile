@@ -56,9 +56,6 @@ object LocalProxyManager {
     private const val KEYSTORE_PREFS = "musemobile_secure_prefs"
     private const val KEY_PASSWORD = "keystore_password"
     private const val CA_ALIAS = "musemobile-ca"
-    // Keystore entry name used before the rename; kept as a read fallback so
-    // existing installs don't lose their CA and have to reinstall the cert.
-    private const val LEGACY_CA_ALIAS = "spotilol-ca"
     private const val KEYSTORE_TYPE = "PKCS12"
 
     @Volatile private var serverSocket: ServerSocket? = null
@@ -88,14 +85,6 @@ object LocalProxyManager {
             null
         }
         if (password == null) {
-            // Pre-rename installs stored this under the old encrypted prefs file.
-            password = readLegacyKeystorePassword(context)
-            if (password != null) {
-                try {
-                    prefs.edit { putString(KEY_PASSWORD, password) }
-                } catch (_: Exception) {}
-                return password
-            }
             val random = SecureRandom()
             val bytes = ByteArray(32)
             random.nextBytes(bytes)
@@ -105,27 +94,6 @@ object LocalProxyManager {
             } catch (_: Exception) {}
         }
         return password
-    }
-
-    private fun readLegacyKeystorePassword(context: Context): String? {
-        // 1) Encrypted variant under the old file name.
-        runCatching {
-            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-            val legacy = EncryptedSharedPreferences.create(
-                "spotilol_secure_prefs",
-                masterKeyAlias,
-                context,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            legacy.getString(KEY_PASSWORD, null)?.takeIf { !it.isNullOrEmpty() }?.let { return it }
-        }
-        // 2) Plain fallback under the old file name.
-        runCatching {
-            context.getSharedPreferences("spotilol_secure_prefs", Context.MODE_PRIVATE)
-                .getString(KEY_PASSWORD, null)?.takeIf { !it.isNullOrEmpty() }?.let { return it }
-        }
-        return null
     }
 
     private fun securePrefs(context: Context): SharedPreferences {
@@ -175,11 +143,8 @@ object LocalProxyManager {
                     Log.d(TAG, "Migrating keystore to new password")
                     val ks = KeyStore.getInstance(KEYSTORE_TYPE)
                     ksFile.inputStream().use { ks.load(it, "".toCharArray()) }
-                    val entry = try {
+                    val entry =
                         ks.getEntry(CA_ALIAS, KeyStore.PasswordProtection("".toCharArray())) as KeyStore.PrivateKeyEntry
-                    } catch (_: Exception) {
-                        ks.getEntry(LEGACY_CA_ALIAS, KeyStore.PasswordProtection("".toCharArray())) as KeyStore.PrivateKeyEntry
-                    }
                     caKeyPair = KeyPair(entry.certificate.publicKey, entry.privateKey)
                     caCert = entry.certificate as X509Certificate
                     val newKs = KeyStore.getInstance(KEYSTORE_TYPE)
@@ -246,16 +211,8 @@ object LocalProxyManager {
         val ks = KeyStore.getInstance(KEYSTORE_TYPE)
         ksFile.inputStream().use { ks.load(it, password.toCharArray()) }
 
-        val entry = try {
+        val entry =
             ks.getEntry(CA_ALIAS, KeyStore.PasswordProtection(password.toCharArray())) as KeyStore.PrivateKeyEntry
-        } catch (_: Exception) {
-            // Fall back to the pre-rename alias, then re-save under the new one.
-            val legacy = ks.getEntry(LEGACY_CA_ALIAS, KeyStore.PasswordProtection(password.toCharArray())) as KeyStore.PrivateKeyEntry
-            ks.deleteEntry(LEGACY_CA_ALIAS)
-            ks.setKeyEntry(CA_ALIAS, legacy.privateKey, password.toCharArray(), arrayOf(legacy.certificate))
-            ksFile.outputStream().use { ks.store(it, password.toCharArray()) }
-            legacy
-        }
         caKeyPair = KeyPair(entry.certificate.publicKey, entry.privateKey)
         caCert = entry.certificate as X509Certificate
 

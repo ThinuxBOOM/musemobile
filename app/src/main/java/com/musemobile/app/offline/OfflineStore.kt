@@ -32,8 +32,6 @@ data class OfflineSong(
 object OfflineStore {
     private const val TAG = "Spl-DL"
     private const val FOLDER = "MuseMobile"
-    // Folder name used before the rename; still scanned so old downloads keep showing up.
-    private const val LEGACY_FOLDER = "Spotilol"
 
     private val TrackIdRegex = Regex("\\[([^\\]]+)\\]\\.[^.]+$")
     private val FileNameRegex = Regex("^(.*) - (.*) \\[([^\\]]+)\\]\\.[^.]+$")
@@ -136,8 +134,8 @@ object OfflineStore {
             context.contentResolver.query(
                 collection,
                 projection,
-                "(${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? OR ${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?) AND ${MediaStore.Audio.Media.IS_PENDING}=0",
-                arrayOf("%Music/$FOLDER%", "%Music/$LEGACY_FOLDER%"),
+                "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Audio.Media.IS_PENDING}=0",
+                arrayOf("%Music/$FOLDER%"),
                 "${MediaStore.Audio.Media.DATE_ADDED} DESC",
             )?.use { c ->
                 while (c.moveToNext()) {
@@ -185,7 +183,7 @@ object OfflineStore {
             }
         } else {
             val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-            val dirs = listOf(File(musicDir, FOLDER), File(musicDir, LEGACY_FOLDER))
+            val dirs = listOf(File(musicDir, FOLDER))
             dirs.flatMap { dir ->
                 dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
             }.forEach { f ->
@@ -249,10 +247,9 @@ object OfflineStore {
                 context.contentResolver.query(
                     MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL),
                     arrayOf(MediaStore.Audio.Media._ID),
-                    "(${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? OR " +
-                            "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?) AND " +
+                    "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ? AND " +
                             "${MediaStore.Audio.Media.DISPLAY_NAME} LIKE ? ESCAPE '\\'",
-                    arrayOf("%Music/$FOLDER%", "%Music/$LEGACY_FOLDER%", "%[$escaped]%"),
+                    arrayOf("%Music/$FOLDER%", "%[$escaped]%"),
                     null,
                 )?.use { it.count > 0 } ?: false
             }.getOrDefault(false)
@@ -260,7 +257,7 @@ object OfflineStore {
             val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
             val marker = "[$trackId]."
             runCatching {
-                listOf(File(musicDir, FOLDER), File(musicDir, LEGACY_FOLDER)).any { dir ->
+                listOf(File(musicDir, FOLDER)).any { dir ->
                     dir.listFiles()?.any { it.isFile && it.name.contains(marker) } == true
                 }
             }.getOrDefault(false)

@@ -86,7 +86,6 @@ class DownloadService : Service() {
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
-            runCatching { nm.deleteNotificationChannel("spotilol_downloads") }
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "Downloads",

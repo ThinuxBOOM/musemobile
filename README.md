@@ -1,7 +1,3 @@
-<div align="center">
-  <img src="art/bgwelcome.png" alt="MuseMobile" style="width: 100%; max-width: 900px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
-</div>
-
 <h1 align="center">MuseMobile</h1>
 
 <p align="center">
@@ -35,7 +31,7 @@
 </p>
 
 <p align="center">
-  ported from smali to clean Kotlin by <strong>ThinuxBOOM</strong>, based on deviato's <strong>Spotifuck</strong>. free, open-source, and it just works.
+  <strong>MuseMobile</strong>, ported from smali to clean Kotlin by <strong>ThinuxBOOM</strong>. free, open-source, and it just works.
 </p>
 
 ---
