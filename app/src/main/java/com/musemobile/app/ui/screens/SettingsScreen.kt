@@ -192,6 +192,7 @@ fun SettingsContent(
     var offlineMode by remember { mutableStateOf(prefs.getBoolean("OfflineMode", false)) }
     var blockSW by remember { mutableStateOf(blockServiceWorker) }
     var hideEmptyPlayer by remember { mutableStateOf(prefs.getBoolean("HideEmptyPlayer", false)) }
+    var powerSave by remember { mutableStateOf(prefs.getBoolean("PowerSave", false)) }
     var lyricsStyle by remember { mutableStateOf(prefs.getString("LyricsStyle", LyricsTheme.DEFAULT_STYLE) ?: LyricsTheme.DEFAULT_STYLE) }
 
     val context = LocalContext.current
@@ -417,6 +418,19 @@ fun SettingsContent(
                 onCheckedChange = {
                     closeNowPlay = it
                     prefs.edit().putBoolean("CloseNowPlay", it).apply()
+                }
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+            SettingSwitchTile(
+                title = "Power Save Mode",
+                subtitle = "Freeze videos and slow background timers",
+                icon = Icons.Default.PowerSettingsNew,
+                checked = powerSave,
+                onCheckedChange = {
+                    powerSave = it
+                    prefs.edit().putBoolean("PowerSave", it).apply()
                 }
             )
         }
