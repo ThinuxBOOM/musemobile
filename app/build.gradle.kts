@@ -111,4 +111,7 @@ dependencies {
 
     // Core library desugaring (required by NewPipeExtractor)
     coreLibraryDesugaring(libs.desugaring)
+
+    // JVM unit tests (pure-logic, e.g. adblock matching — no Android framework)
+    testImplementation("junit:junit:4.13.2")
 }

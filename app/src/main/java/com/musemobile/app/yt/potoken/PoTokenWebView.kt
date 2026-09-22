@@ -284,17 +284,18 @@ class PoTokenWebView private constructor(
                     "x-user-agent" to "grpc-web-javascript/0.1",
                 ).toHeaders())
                 .url(url)
-            val response = withContext(Dispatchers.IO) {
-                httpClient.newCall(requestBuilder.build()).execute()
+            // use{} closes the response on every path (old code leaked it on
+            // the non-200 path and whenever body.string() threw).
+            val (httpCode, body) = withContext(Dispatchers.IO) {
+                httpClient.newCall(requestBuilder.build()).execute().use { response ->
+                    response.code to
+                        if (response.code == 200) response.body.string() else null
+                }
             }
-            val httpCode = response.code
             if (httpCode != 200) {
                 onInitializationErrorCloseAndCancel(PoTokenException("Invalid response code: $httpCode"))
             } else {
-                val body = withContext(Dispatchers.IO) {
-                    response.body.string()
-                }
-                handleResponseBody(body)
+                handleResponseBody(body ?: "")
             }
         }
     }

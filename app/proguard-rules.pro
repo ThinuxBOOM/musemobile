@@ -15,6 +15,9 @@
 -keep class com.musemobile.app.proxy.LocalProxyManager { *; }
 -keep class com.musemobile.app.ui.SplashActivity { *; }
 -keep class com.musemobile.app.ui.MainActivity { *; }
+-keep class com.musemobile.app.ui.OfflineActivity { *; }
+-keep class com.musemobile.app.service.OfflineMediaService { *; }
+-keep class com.musemobile.app.service.DownloadService { *; }
 
 # --- BouncyCastle: only the cert-builder APIs LocalProxyManager actually uses ---
 -keep class org.bouncycastle.asn1.x500.** { *; }

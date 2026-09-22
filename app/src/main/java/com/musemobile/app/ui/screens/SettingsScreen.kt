@@ -1,7 +1,6 @@
 package com.musemobile.app.ui.screens
 
 import android.content.ClipData
-import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -111,7 +109,6 @@ import androidx.webkit.WebViewCompat
 import com.musemobile.app.R
 import com.musemobile.app.profile.ProfileManager
 import com.musemobile.app.proxy.LocalProxyManager
-import com.musemobile.app.ui.theme.SpotifyTheme
 import com.musemobile.app.util.DebugLogStore
 import com.musemobile.app.util.GitHubApi
 import com.musemobile.app.util.GitHubRelease
